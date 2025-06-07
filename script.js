@@ -8,6 +8,10 @@ class ChessGame {
         this.turnNumber = 1;
         this.gameActive = true;
         this.startTime = Date.now();
+
+        this.promotionInProgress = false;
+        this.promotionRow = null;
+        this.promotionCol = null;
         
         this.pieceSymbols = {
             'white': { rook: '♖', knight: '♘', bishop: '♗', queen: '♕', king: '♔', pawn: '♙' },
@@ -239,48 +243,158 @@ isPathClear(fromRow, fromCol, toRow, toCol, board = this.board) {
     return true;
 }
 
-                makeMove(fromRow, fromCol, toRow, toCol) {
-        const piece = this.board[fromRow][fromCol];
-        const targetPiece = this.board[toRow][toCol];
+makeMove(fromRow, fromCol, toRow, toCol) {
+    if (this.promotionInProgress) return;
+    
+    const piece = this.board[fromRow][fromCol];
+    const targetPiece = this.board[toRow][toCol];
+    
+    if (targetPiece) {
+        this.capturedPieces.push({
+            piece: targetPiece,
+            by: piece,
+            at: new Date()
+        });
         
-        if (targetPiece) {
-            this.capturedPieces.push({
-                piece: targetPiece,
-                by: piece,
-                at: new Date()
-            });
-            
-            this.captureSound.currentTime = 0;
-            this.captureSound.play();
-            
-            if (targetPiece.type === 'king') {
-                const endTime = Date.now();
-                const timeTaken = Math.floor((endTime - this.startTime) / 1000);
-                this.endGameWithKingCapture(timeTaken);
-                return;
-            }
-        } else {
-            this.moveSound.currentTime = 0;
-            this.moveSound.play();
+        this.captureSound.currentTime = 0;
+        this.captureSound.play();
+        
+        if (targetPiece.type === 'king') {
+            const endTime = Date.now();
+            const timeTaken = Math.floor((endTime - this.startTime) / 1000);
+            this.endGameWithKingCapture(timeTaken);
+            return;
         }
-        
-        this.board[toRow][toCol] = piece;
-        this.board[fromRow][fromCol] = null;
-        
-        if (piece.type === 'pawn' && (toRow === 0 || toRow === 7)) {
-            this.board[toRow][toCol] = {type: 'queen', color: piece.color};
-        }
-        
-        const moveNotation = this.getMoveNotation(fromRow, fromCol, toRow, toCol);
-        this.recordMove(moveNotation);
-        
-        this.currentPlayer = this.currentPlayer === 'white' ? 'black' : 'white';
-        this.turnNumber = this.currentPlayer === 'white' ? this.turnNumber + 1 : this.turnNumber;
-        
-        this.updateDisplay();
-        
-        this.checkGameStatus();
+    } else {
+        this.moveSound.currentTime = 0;
+        this.moveSound.play();
     }
+    
+    this.board[toRow][toCol] = piece;
+    this.board[fromRow][fromCol] = null;
+
+    if (piece.type === 'pawn' && (toRow === 0 || toRow === 7)) {
+        this.promotionInProgress = true;
+        this.promotionRow = toRow;
+        this.promotionCol = toCol;
+        this.showPromotionMenu(toRow, toCol, piece.color);
+        return;
+    }
+    
+    this.completeMove(fromRow, fromCol, toRow, toCol);
+}
+
+completeMove(fromRow, fromCol, toRow, toCol) {
+    const piece = this.board[toRow][toCol];
+    const moveNotation = this.getMoveNotation(fromRow, fromCol, toRow, toCol);
+    this.recordMove(moveNotation);
+    
+    this.currentPlayer = this.currentPlayer === 'white' ? 'black' : 'white';
+    this.turnNumber = this.currentPlayer === 'white' ? this.turnNumber + 1 : this.turnNumber;
+    
+    this.updateDisplay();
+    this.checkGameStatus();
+    
+    if (this.gameActive && this.currentPlayer === 'black') {
+        setTimeout(() => this.makeAIMove(), 1000);
+    }
+}
+
+showPromotionMenu(row, col, color) {
+    document.querySelectorAll('.promotion-menu').forEach(menu => menu.remove());
+
+    const boardElem = document.getElementById('chess-container');
+    const boardRect = boardElem.getBoundingClientRect();
+    const cell = document.querySelector(`[data-row="${row}"][data-col="${col}"]`);
+    const cellRect = cell.getBoundingClientRect();
+
+    const menu = document.createElement('div');
+    menu.className = 'promotion-menu';
+    menu.style.position = 'absolute';
+    menu.style.zIndex = 1000;
+    menu.style.display = 'flex';
+    menu.style.background = '#fff';
+    menu.style.border = '2px solid #333';
+    menu.style.borderRadius = '6px';
+    menu.style.boxShadow = '0 2px 8px rgba(0,0,0,0.2)';
+
+    boardElem.appendChild(menu);
+
+    let left = cellRect.left - boardRect.left;
+    let top = cellRect.top - boardRect.top;
+
+    if (row === 0) {
+        menu.style.flexDirection = 'column';
+        top = cellRect.bottom - boardRect.top - menu.offsetHeight;
+    } else if (row === 7) {
+        menu.style.flexDirection = 'column';
+        top = cellRect.top - boardRect.top;
+    } else {
+        menu.style.flexDirection = 'row';
+    }
+
+    const options = [
+        { type: 'queen', symbol: color === 'white' ? '♕' : '♛' },
+        { type: 'rook', symbol: color === 'white' ? '♖' : '♜' },
+        { type: 'bishop', symbol: color === 'white' ? '♗' : '♝' },
+        { type: 'knight', symbol: color === 'white' ? '♘' : '♞' }
+    ];
+
+    options.forEach(option => {
+        const optionElement = document.createElement('div');
+        optionElement.className = 'promotion-option';
+        optionElement.textContent = option.symbol;
+        optionElement.style.padding = '10px 16px';
+        optionElement.style.cursor = 'pointer';
+        optionElement.style.fontSize = '2rem';
+        optionElement.addEventListener('click', () => {
+            this.handlePromotionChoice(option.type);
+        });
+        optionElement.addEventListener('mouseenter', () => {
+            optionElement.style.background = '#eee';
+        });
+        optionElement.addEventListener('mouseleave', () => {
+            optionElement.style.background = '';
+        });
+        menu.appendChild(optionElement);
+    });
+
+    const menuRect = menu.getBoundingClientRect();
+
+    if (left + menuRect.width > boardRect.width) {
+        left = boardRect.width - menuRect.width;
+    }
+    if (left < 0) {
+        left = 0;
+    }
+    if (top + menuRect.height > boardRect.height) {
+        top = boardRect.height - menuRect.height;
+    }
+    if (top < 0) {
+        top = 0;
+    }
+
+    menu.style.left = `${left}px`;
+    menu.style.top = `${top}px`;
+
+}
+
+handlePromotionChoice(pieceType) {
+    if (!this.promotionInProgress) return;
+    
+    this.board[this.promotionRow][this.promotionCol].type = pieceType;
+    
+    document.querySelectorAll('.promotion-menu').forEach(menu => {
+        menu.remove();
+    });
+    
+    this.promotionInProgress = false;
+    const fromRow = this.promotionRow === 0 ? 1 : 6;
+    this.completeMove(fromRow, this.promotionCol, this.promotionRow, this.promotionCol);
+    
+    this.promotionRow = null;
+    this.promotionCol = null;
+}
 
             endGameWithKingCapture(timeTaken) {
                 this.gameActive = false;
@@ -887,5 +1001,5 @@ isKingInCheck(player, board = this.board) {
         }
 
         window.addEventListener('DOMContentLoaded', () => {
-            const game = new ChessGame();
+            window.game = new ChessGame();
         });
