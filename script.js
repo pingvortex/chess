@@ -1,22 +1,25 @@
-        class ChessGame {
-            constructor() {
-                this.board = this.initBoard();
-                this.currentPlayer = 'white';
-                this.selectedCell = null;
-                this.gameHistory = [];
-                this.capturedPieces = [];
-                this.turnNumber = 1;
-                this.gameActive = true;
-                this.startTime = Date.now();
-                
-                this.pieceSymbols = {
-                    'white': { rook: '♖', knight: '♘', bishop: '♗', queen: '♕', king: '♔', pawn: '♙' },
-                    'black': { rook: '♜', knight: '♞', bishop: '♝', queen: '♛', king: '♚', pawn: '♟' }
-                };
-                
-                this.setupEventListeners();
-                this.updateDisplay();
-            }
+class ChessGame {
+    constructor() {
+        this.board = this.initBoard();
+        this.currentPlayer = 'white';
+        this.selectedCell = null;
+        this.gameHistory = [];
+        this.capturedPieces = [];
+        this.turnNumber = 1;
+        this.gameActive = true;
+        this.startTime = Date.now();
+        
+        this.pieceSymbols = {
+            'white': { rook: '♖', knight: '♘', bishop: '♗', queen: '♕', king: '♔', pawn: '♙' },
+            'black': { rook: '♜', knight: '♞', bishop: '♝', queen: '♛', king: '♚', pawn: '♟' }
+        };
+        
+        this.moveSound = new Audio('assets/move-self.mp3');
+        this.captureSound = new Audio('assets/capture.mp3');
+        
+        this.setupEventListeners();
+        this.updateDisplay();
+    }
 
             initBoard() {
                 const board = [];
@@ -236,42 +239,48 @@ isPathClear(fromRow, fromCol, toRow, toCol, board = this.board) {
     return true;
 }
 
-            makeMove(fromRow, fromCol, toRow, toCol) {
-                const piece = this.board[fromRow][fromCol];
-                const targetPiece = this.board[toRow][toCol];
-                
-                if (targetPiece) {
-                    this.capturedPieces.push({
-                        piece: targetPiece,
-                        by: piece,
-                        at: new Date()
-                    });
-                    
-                    if (targetPiece.type === 'king') {
-                        const endTime = Date.now();
-                        const timeTaken = Math.floor((endTime - this.startTime) / 1000);
-                        this.endGameWithKingCapture(timeTaken);
-                        return;
-                    }
-                }
-                
-                this.board[toRow][toCol] = piece;
-                this.board[fromRow][fromCol] = null;
-                
-                if (piece.type === 'pawn' && (toRow === 0 || toRow === 7)) {
-                    this.board[toRow][toCol] = {type: 'queen', color: piece.color};
-                }
-                
-                const moveNotation = this.getMoveNotation(fromRow, fromCol, toRow, toCol);
-                this.recordMove(moveNotation);
-                
-                this.currentPlayer = this.currentPlayer === 'white' ? 'black' : 'white';
-                this.turnNumber = this.currentPlayer === 'white' ? this.turnNumber + 1 : this.turnNumber;
-                
-                this.updateDisplay();
-                
-                this.checkGameStatus();
+                makeMove(fromRow, fromCol, toRow, toCol) {
+        const piece = this.board[fromRow][fromCol];
+        const targetPiece = this.board[toRow][toCol];
+        
+        if (targetPiece) {
+            this.capturedPieces.push({
+                piece: targetPiece,
+                by: piece,
+                at: new Date()
+            });
+            
+            this.captureSound.currentTime = 0;
+            this.captureSound.play();
+            
+            if (targetPiece.type === 'king') {
+                const endTime = Date.now();
+                const timeTaken = Math.floor((endTime - this.startTime) / 1000);
+                this.endGameWithKingCapture(timeTaken);
+                return;
             }
+        } else {
+            this.moveSound.currentTime = 0;
+            this.moveSound.play();
+        }
+        
+        this.board[toRow][toCol] = piece;
+        this.board[fromRow][fromCol] = null;
+        
+        if (piece.type === 'pawn' && (toRow === 0 || toRow === 7)) {
+            this.board[toRow][toCol] = {type: 'queen', color: piece.color};
+        }
+        
+        const moveNotation = this.getMoveNotation(fromRow, fromCol, toRow, toCol);
+        this.recordMove(moveNotation);
+        
+        this.currentPlayer = this.currentPlayer === 'white' ? 'black' : 'white';
+        this.turnNumber = this.currentPlayer === 'white' ? this.turnNumber + 1 : this.turnNumber;
+        
+        this.updateDisplay();
+        
+        this.checkGameStatus();
+    }
 
             endGameWithKingCapture(timeTaken) {
                 this.gameActive = false;
