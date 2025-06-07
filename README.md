@@ -37,7 +37,6 @@ A modern, interactive chess game built with HTML, CSS, and JavaScript. Play agai
 ## Future Improvements
 
 - Add difficulty levels for the AI
-- Add sound effects
 - Create a mobile-friendly version
 
 Enjoy the game!
