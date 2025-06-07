@@ -285,7 +285,6 @@ makeMove(fromRow, fromCol, toRow, toCol) {
 }
 
 completeMove(fromRow, fromCol, toRow, toCol) {
-    const piece = this.board[toRow][toCol];
     const moveNotation = this.getMoveNotation(fromRow, fromCol, toRow, toCol);
     this.recordMove(moveNotation);
     
@@ -770,71 +769,85 @@ showHint() {
 }
 
 parseMoveNotation(notation) {
-    if (!notation || typeof notation !== 'string' || notation.length < 4) {
-        console.warn(`Invalid move notation (length or type): ${notation}`);
+    const files = 'abcdefgh';
+
+    if (!notation || typeof notation !== 'string' || notation.length < 2) {
+        console.warn(`Invalid move notation: ${notation}`);
         return [0, 0, 0, 0];
     }
 
-    const files = 'abcdefgh';
-    const ranks = '87654321';
     const isCapture = notation.includes('x');
+    const clean = notation.replace(/[\+#]/g, '').trim();
 
-    const cleanNotation = notation.trim();
-    let fromFile, fromRank, toFile, toRank;
+    let fromFile = '0', fromRank = '0', toFile, toRank;
 
-    const pieceChar = cleanNotation[0].toUpperCase();
-    if (pieceChar.match(/[RNBQK]/)) {
-        if (cleanNotation.length < (isCapture ? 6 : 5)) {
-            console.warn(`Invalid non-pawn notation: ${cleanNotation}`);
-            return [0, 0, 0, 0];
+    if (clean.length === 4 && clean.match(/^[a-h][1-8][a-h][1-8]$/)) {
+        fromFile = clean[0];
+        fromRank = clean[1];
+        toFile = clean[2];
+        toRank = clean[3];
+    } else if (clean.match(/^[a-h]x?[a-h][1-8]$/)) {
+        fromFile = isCapture ? clean[0] : clean[0];
+        toFile = isCapture ? clean[2] : clean[0];
+        toRank = isCapture ? clean[3] : clean[1];
+    } else if (clean.match(/^[RNBQK][a-h1-8]?x?[a-h][1-8]$/i)) {
+        const match = clean.match(/([RNBQK])([a-h1-8]?)[x]?([a-h])([1-8])/i);
+        if (!match) return [0, 0, 0, 0];
+
+        const pieceChar = match[1].toUpperCase();
+        let pieceType = '';
+        if (pieceChar === 'N') pieceType = 'knight';
+        else if (pieceChar === 'K') pieceType = 'king';
+        else if (pieceChar === 'Q') pieceType = 'queen';
+        else if (pieceChar === 'R') pieceType = 'rook';
+        else if (pieceChar === 'B') pieceType = 'bishop';
+
+        const disambiguation = match[2];
+        if (disambiguation.length === 1) {
+            if (disambiguation >= 'a' && disambiguation <= 'h') {
+                fromFile = disambiguation;
+            } else if (disambiguation >= '1' && disambiguation <= '8') {
+                fromRank = disambiguation;
+            }
         }
-        fromFile = cleanNotation[1];
-        fromRank = cleanNotation[2];
-        toFile = cleanNotation[isCapture ? 4 : 3];
-        toRank = cleanNotation[isCapture ? 5 : 4];
+
+        toFile = match[3];
+        toRank = match[4];
     } else {
-        if (cleanNotation.length < (isCapture ? 5 : 4)) {
-            console.warn(`Invalid pawn notation: ${cleanNotation}`);
-            return [0, 0, 0, 0];
-        }
-        fromFile = cleanNotation[0];
-        fromRank = cleanNotation[1];
-        toFile = cleanNotation[isCapture ? 3 : 2];
-        toRank = cleanNotation[isCapture ? 4 : 3];
+        console.warn(`Unknown format: ${clean}`);
+        return [0, 0, 0, 0];
     }
 
     const fromCol = files.indexOf(fromFile);
-    const fromRow = ranks.indexOf(fromRank);
+    const fromRow = fromRank !== '0' ? 7 - (parseInt(fromRank) - 1) : -1;
     const toCol = files.indexOf(toFile);
-    const toRow = ranks.indexOf(toRank);
-
-    if (fromCol === -1 || fromRow === -1 || toCol === -1 || toRow === -1) {
-        console.warn(`Invalid coordinates in notation: ${cleanNotation} (from: ${fromFile}${fromRank}, to: ${toFile}${toRank})`);
-        return [0, 0, 0, 0];
-    }
+    const toRow = 7 - (parseInt(toRank) - 1);
 
     return [fromRow, fromCol, toRow, toCol];
 }
 
-            getMoveNotation(fromRow, fromCol, toRow, toCol) {
-                const piece = this.board[toRow][toCol];
-                const files = 'abcdefgh';
-                const ranks = '87654321';
-                
-                let notation = '';
-                
-                if (piece.type !== 'pawn') {
-                    notation = piece.type.toUpperCase().charAt(0);
-                }
-                
-                notation += files[fromCol];
-                notation += ranks[fromRow];
-                notation += this.board[toRow][toCol] ? 'x' : '-';
-                notation += files[toCol];
-                notation += ranks[toRow];
-                
-                return notation;
-            }
+getMoveNotation(fromRow, fromCol, toRow, toCol) {
+    const piece = this.board[toRow][toCol];
+    const files = 'abcdefgh';
+    const ranks = '87654321';
+    
+    let notation = '';
+    
+    if (piece.type !== 'pawn') {
+        let pieceChar = '';
+        if (piece.type === 'knight') pieceChar = 'N';
+        else if (piece.type === 'king') pieceChar = 'K';
+        else if (piece.type === 'queen') pieceChar = 'Q';
+        else if (piece.type === 'rook') pieceChar = 'R';
+        else if (piece.type === 'bishop') pieceChar = 'B';
+        notation = pieceChar;
+    }
+    
+    notation += files[toCol];
+    notation += ranks[toRow];
+    
+    return notation;
+}
 
             recordMove(notation) {
                 this.gameHistory.push({
