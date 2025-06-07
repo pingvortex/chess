@@ -29,6 +29,7 @@ A modern, interactive chess game built with HTML, CSS, and JavaScript. Play agai
 
 - Pure JavaScript implementation of chess rules
 - AI uses move evaluation with material, position, and king safety considerations
+- Estimated Elo of AI is 600
 - Win probability calculation based on board state analysis
 - Local storage for tracking win statistics
 - CSS animations for smooth piece movement and highlights
