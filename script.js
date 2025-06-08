@@ -656,54 +656,83 @@ class ChessGame {
 
     makeAIMove() {
         if (!this.gameActive || this.currentPlayer !== 'black') return;
-        
+
+        // Opening book: play e5 or d5 as first move if available
+        if (this.turnNumber === 1) {
+            const openingMoves = [
+                { fromRow: 1, fromCol: 4, toRow: 3, toCol: 4 }, // e5
+                { fromRow: 1, fromCol: 3, toRow: 3, toCol: 3 }  // d5
+            ];
+            for (const move of openingMoves) {
+                if (this.isValidMove(move.fromRow, move.fromCol, move.toRow, move.toCol)) {
+                    this.makeMove(move.fromRow, move.fromCol, move.toRow, move.toCol);
+                    return;
+                }
+            }
+        }
+
         const validMoves = this.getAllValidMoves('black');
-        
         if (validMoves.length === 0) {
             this.checkGameStatus();
             return;
         }
-        
-        const evaluatedMoves = validMoves.map(move => ({
-            move,
-            score: this.evaluateMove(move, 'black')
-        }));
-        
-        evaluatedMoves.sort((a, b) => b.score - a.score);
-        
-        const topMoves = evaluatedMoves.slice(0, 5);
-        const weights = topMoves.map((_, i) => 1 / (i + 1));
-        const totalWeight = weights.reduce((a, b) => a + b, 0);
-        const probabilities = weights.map(w => w / totalWeight);
-        
-        let r = Math.random();
-        let selectedIndex = 0;
-        for (let i = 0; i < probabilities.length; i++) {
-            r -= probabilities[i];
-            if (r <= 0) {
-                selectedIndex = i;
-                break;
+
+        let bestScore = -Infinity;
+        let bestMoves = [];
+        for (const move of validMoves) {
+            const tempBoard = JSON.parse(JSON.stringify(this.board));
+            tempBoard[move.toRow][move.toCol] = move.piece;
+            tempBoard[move.fromRow][move.fromCol] = null;
+            if (move.piece.type === 'pawn' && move.toRow === 7) {
+                tempBoard[move.toRow][move.toCol] = { type: 'queen', color: 'black' };
+            }
+            // Use correct color and board for white's reply
+            const replyMoves = this.getAllValidMovesForBoard('white', tempBoard);
+            let minReplyScore = Infinity;
+            if (replyMoves.length === 0) {
+                // If white has no moves, check for checkmate or stalemate
+                if (this.isKingInCheck('white', tempBoard)) {
+                    minReplyScore = 10000; // Black wins
+                } else {
+                    minReplyScore = 0; // Stalemate
+                }
+            } else {
+                for (const reply of replyMoves) {
+                    const replyBoard = JSON.parse(JSON.stringify(tempBoard));
+                    replyBoard[reply.toRow][reply.toCol] = reply.piece;
+                    replyBoard[reply.fromRow][reply.fromCol] = null;
+                    if (reply.piece.type === 'pawn' && reply.toRow === 0) {
+                        replyBoard[reply.toRow][reply.toCol] = { type: 'queen', color: 'white' };
+                    }
+                    const score = this.evaluateBoard(replyBoard, 'black');
+                    if (score < minReplyScore) minReplyScore = score;
+                }
+            }
+            if (minReplyScore > bestScore) {
+                bestScore = minReplyScore;
+                bestMoves = [move];
+            } else if (minReplyScore === bestScore) {
+                bestMoves.push(move);
             }
         }
-        
-        const selectedMove = topMoves[selectedIndex].move;
+        const selectedMove = bestMoves[Math.floor(Math.random() * bestMoves.length)];
         this.makeMove(selectedMove.fromRow, selectedMove.fromCol, selectedMove.toRow, selectedMove.toCol);
     }
 
-    getAllValidMoves(color) {
+    getAllValidMovesForBoard(color, board) {
         const validMoves = [];
         for (let fromRow = 0; fromRow < 8; fromRow++) {
             for (let fromCol = 0; fromCol < 8; fromCol++) {
-                const piece = this.board[fromRow][fromCol];
+                const piece = board[fromRow][fromCol];
                 if (piece && piece.color === color) {
                     for (let toRow = 0; toRow < 8; toRow++) {
                         for (let toCol = 0; toCol < 8; toCol++) {
-                            if (this.isValidMove(fromRow, fromCol, toRow, toCol)) {
+                            if (this.isValidMoveForBoard(fromRow, fromCol, toRow, toCol, board, color)) {
                                 validMoves.push({
                                     fromRow, fromCol, toRow, toCol,
                                     piece,
-                                    isCapture: !!this.board[toRow][toCol],
-                                    targetPiece: this.board[toRow][toCol]
+                                    isCapture: !!board[toRow][toCol],
+                                    targetPiece: board[toRow][toCol]
                                 });
                             }
                         }
@@ -714,196 +743,85 @@ class ChessGame {
         return validMoves;
     }
 
-    evaluateMove(move, playerColor) {
-        let score = 0;
-        const opponentColor = playerColor === 'white' ? 'black' : 'white';
-        const pieceValues = { pawn: 10, knight: 30, bishop: 30, rook: 50, queen: 90, king: 1000 };
-
-        if (move.isCapture) {
-            score += pieceValues[move.targetPiece.type] * 0.9;
-        }
-        const isToCenter = [3, 4].includes(move.toRow) && [3, 4].includes(move.toCol);
-        if (isToCenter) score += 10;
-        if (this.turnNumber < 10) {
-            if (move.piece.type === 'knight' || move.piece.type === 'bishop') {
-                if (move.fromRow === 0 || move.fromRow === 7) score += 8;
-            }
-            if (move.piece.type === 'pawn' && (move.fromCol === 3 || move.fromCol === 4)) {
-                score += 6;
-            }
-            if (move.piece.type === 'king' || move.piece.type === 'queen') {
-                score -= 15;
-            }
-        }
-        const tempBoard = JSON.parse(JSON.stringify(this.board));
-        tempBoard[move.toRow][move.toCol] = move.piece;
-        tempBoard[move.fromRow][move.fromCol] = null;
-
-        if (move.piece.type === 'king') {
-            const kingSafety = this.evaluateKingSafety(playerColor, move.toRow, move.toCol, tempBoard);
-            score += kingSafety;
-
-            if (this.turnNumber > 30) {
-                const isSafe = !this.isKingInCheck(playerColor, tempBoard);
-                if (isSafe) {
-                    if (playerColor === 'white' && move.toRow < move.fromRow) {
-                        score += 15;
-                    } else if (playerColor === 'black' && move.toRow > move.fromRow) {
-                        score += 15;
-                    }
-                    if (isToCenter) score += 10;
-                } else {
-                    score += 5;
-                }
-            }
-        }
-        if (this.isKingInCheck(opponentColor, tempBoard)) {
-            score += 20;
-        }
-
-        for (let row = 0; row < 8; row++) {
-            for (let col = 0; col < 8; col++) {
-                const opponentPiece = tempBoard[row][col];
-                if (opponentPiece && opponentPiece.color === opponentColor) {
-                    if (this.canPieceAttack(opponentPiece, row, col, move.toRow, move.toCol, tempBoard)) {
-                        score -= pieceValues[move.piece.type] * 0.5;
-                        break;
-                    }
-                }
-            }
-        }
-
-        if (this.turnNumber > 30 && move.isCapture) {
-            score += 10;
-        }
-
-        return score;
+    // Patch: always use provided board and color for move validation
+    isValidMoveForBoard(fromRow, fromCol, toRow, toCol, board, color) {
+        if (toRow < 0 || toRow > 7 || toCol < 0 || toCol > 7) return false;
+        const piece = board[fromRow][fromCol];
+        const target = board[toRow][toCol];
+        if (!piece || (target && target.color === piece.color)) return false;
+        if (!this.isPieceValidMoveForBoard(piece, fromRow, fromCol, toRow, toCol, board)) return false;
+        const tempBoard = JSON.parse(JSON.stringify(board));
+        tempBoard[toRow][toCol] = piece;
+        tempBoard[fromRow][fromCol] = null;
+        return !this.isKingInCheck(color, tempBoard);
     }
 
-    showHint() {
-        if (this.currentPlayer !== 'white') return;
-
-        document.querySelectorAll('.hint-move').forEach(cell => {
-            cell.classList.remove('hint-move');
-        });
-
-        const validMoves = this.getAllValidMoves('white');
-        if (validMoves.length === 0) return;
-
-        const positionHistory = new Map();
-        this.gameHistory.forEach(({ move }, index) => {
-            if (!move || typeof move !== 'string') {
-                console.warn(`Skipping invalid move in history: ${move}`);
-                return;
-            }
-            const tempBoard = JSON.parse(JSON.stringify(this.board));
-            if (index % 2 === 0) {
-                try {
-                    const [fromRow, fromCol, toRow, toCol] = this.parseMoveNotation(move);
-                    if (fromRow === 0 && fromCol === 0 && toRow === 0 && toCol === 0) {
-                      // console.warn(`Skipping fallback move: ${move}`);
-                        return;
-                    }
-                    tempBoard[toRow][toCol] = tempBoard[fromRow][fromCol];
-                    tempBoard[fromRow][fromCol] = null;
-                } catch (e) {
-                    console.warn(`Failed to parse move: ${move}`, e);
-                    return;
-                }
-            }
-            const positionKey = JSON.stringify(tempBoard);
-            positionHistory.set(positionKey, (positionHistory.get(positionKey) || 0) + 1);
-        });
-
-        const evaluatedMoves = validMoves.map(move => {
-            const tempBoard = JSON.parse(JSON.stringify(this.board));
-            tempBoard[move.toRow][move.toCol] = move.piece;
-            tempBoard[move.fromRow][move.fromCol] = null;
-            const positionKey = JSON.stringify(tempBoard);
-            const repetitionCount = positionHistory.get(positionKey) || 0;
-
-            let score = this.evaluateMove(move, 'white');
-            if (repetitionCount >= 2) {
-                score -= 20;
-            }
-
-            return { move, score };
-        });
-
-        evaluatedMoves.sort((a, b) => b.score - a.score);
-        const topMoves = evaluatedMoves.slice(0, 1);
-
-        topMoves.forEach(({ move }) => {
-            const fromCell = document.querySelector(`[data-row="${move.fromRow}"][data-col="${move.fromCol}"]`);
-            const toCell = document.querySelector(`[data-row="${move.toRow}"][data-col="${move.toCol}"]`);
-
-            fromCell.classList.add('hint-move');
-            toCell.classList.add('hint-move');
-
-            let annotation = '';
-            if (move.isCapture) {
-                annotation = `Captures ${move.targetPiece.type}`;
-            } else if ([3, 4].includes(move.toRow) && [3, 4].includes(move.toCol)) {
-                annotation = 'Controls center';
-            } else {
-                annotation = 'Good move';
-            }
-            toCell.setAttribute('data-hint', annotation);
-        });
+    isPieceValidMoveForBoard(piece, fromRow, fromCol, toRow, toCol, board) {
+        const rowDiff = toRow - fromRow;
+        const colDiff = toCol - fromCol;
+        const absRowDiff = Math.abs(rowDiff);
+        const absColDiff = Math.abs(colDiff);
+        
+        switch (piece.type) {
+            case 'pawn':
+                return this.isValidPawnMoveForBoard(piece, fromRow, fromCol, toRow, toCol, board);
+            case 'rook':
+                return (fromRow === toRow || fromCol === toCol) && this.isPathClear(fromRow, fromCol, toRow, toCol, board);
+            case 'bishop':
+                return absRowDiff === absColDiff && this.isPathClear(fromRow, fromCol, toRow, toCol, board);
+            case 'queen':
+                return (fromRow === toRow || fromCol === toCol || absRowDiff === absColDiff) && this.isPathClear(fromRow, fromCol, toRow, toCol, board);
+            case 'king':
+                return absRowDiff <= 1 && absColDiff <= 1 && !(absRowDiff === 0 && absColDiff === 0);
+            case 'knight':
+                return (absRowDiff === 2 && absColDiff === 1) || (absRowDiff === 1 && absColDiff === 2);
+            default:
+                return false;
+        }
     }
 
-    copyGameHistory() {
-        let pgn = '[Event "Chess Game"]\n';
-        pgn += `[Date "${new Date().toISOString().split('T')[0]}"]\n`;
-        pgn += '[White "Player"]\n';
-        pgn += '[Black "AI"]\n\n';
+    isValidPawnMoveForBoard(piece, fromRow, fromCol, toRow, toCol, board) {
+        const direction = piece.color === 'white' ? -1 : 1;
+        const startRow = piece.color === 'white' ? 6 : 1;
         
-        let movePairs = [];
-        for (let i = 0; i < this.gameHistory.length; i += 2) {
-            const whiteMove = this.gameHistory[i]?.move || '';
-            const blackMove = this.gameHistory[i + 1]?.move || '';
-            const turn = this.gameHistory[i]?.turn || Math.floor(i / 2) + 1;
-            movePairs.push(`${turn}. ${whiteMove}${blackMove ? ' ' + blackMove : ''}`);
+        if (fromCol === toCol) {
+            if (toRow - fromRow === direction && !board[toRow][toCol]) {
+                return true;
+            }
+            if (fromRow === startRow && toRow - fromRow === 2 * direction && !board[toRow][toCol] && !board[fromRow + direction][fromCol]) {
+                return true;
+            }
+        } else if (Math.abs(fromCol - toCol) === 1 && toRow - fromRow === direction) {
+            return board[toRow][toCol] && board[toRow][toCol].color !== piece.color;
         }
-        pgn += movePairs.join(' ') + '\n';
         
-        if (!this.gameActive) {
-            const winner = this.isCheckmate('white') ? '0-1' : this.isCheckmate('black') ? '1-0' : '1/2-1/2';
-            pgn += `[Result "${winner}"]\n`;
-        }
+        return false;
+    }
 
-        const copyBtn = document.getElementById('copy-history-button');
-        const setCopied = () => {
-            if (copyBtn) {
-                const original = copyBtn.textContent;
-                copyBtn.textContent = 'Copied';
-                copyBtn.disabled = true;
-                setTimeout(() => {
-                    copyBtn.textContent = original;
-                    copyBtn.disabled = false;
-                }, 1000);
+    isCheckmate(player) {
+        if (!this.isKingInCheck(player)) return false;
+        
+        for (let fromRow = 0; fromRow < 8; fromRow++) {
+            for (let fromCol = 0; fromCol < 8; fromCol++) {
+                const piece = this.board[fromRow][fromCol];
+                if (piece && piece.color === player) {
+                    for (let toRow = 0; toRow < 8; toRow++) {
+                        for (let toCol = 0; toCol < 8; toCol++) {
+                            if (this.isValidMove(fromRow, fromCol, toRow, toCol)) {
+                                const tempBoard = JSON.parse(JSON.stringify(this.board));
+                                tempBoard[toRow][toCol] = piece;
+                                tempBoard[fromRow][fromCol] = null;
+                                
+                                if (!this.isKingInCheck(player, tempBoard)) {
+                                    return false;
+                                }
+                            }
+                        }
+                    }
+                }
             }
-        };
-
-        if (navigator.clipboard && window.isSecureContext) {
-            navigator.clipboard.writeText(pgn).then(() => {
-                setCopied();
-            }).catch(err => {
-                console.error('Failed to copy PGN: ', err);
-            });
-        } else {
-            const textarea = document.createElement('textarea');
-            textarea.value = pgn;
-            document.body.appendChild(textarea);
-            textarea.select();
-            try {
-                document.execCommand('copy');
-                setCopied();
-            } catch (err) {
-                console.error('Failed to copy PGN: ', err);
-            }
-            document.body.removeChild(textarea);
         }
+        return true;
     }
 
     isDrawByInsufficientMaterial() {
@@ -1297,6 +1215,76 @@ class ChessGame {
         if (this.gameHistory.length === 0) return;
         
         this.newGame();
+    }
+
+    getAllValidMoves(color) {
+        const validMoves = [];
+        for (let fromRow = 0; fromRow < 8; fromRow++) {
+            for (let fromCol = 0; fromCol < 8; fromCol++) {
+                const piece = this.board[fromRow][fromCol];
+                if (piece && piece.color === color) {
+                    for (let toRow = 0; toRow < 8; toRow++) {
+                        for (let toCol = 0; toCol < 8; toCol++) {
+                            if (this.isValidMove(fromRow, fromCol, toRow, toCol)) {
+                                validMoves.push({
+                                    fromRow, fromCol, toRow, toCol,
+                                    piece,
+                                    isCapture: !!this.board[toRow][toCol],
+                                    targetPiece: this.board[toRow][toCol]
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return validMoves;
+    }
+
+    evaluateBoard(board, playerColor) {
+        // Evaluate the board for the AI: material, activity, king safety, pawn structure, development
+        let whiteMaterial = 0, blackMaterial = 0;
+        let whiteActivity = 0, blackActivity = 0;
+        let whiteDevelopment = 0, blackDevelopment = 0;
+        let whitePawnStructure = 0, blackPawnStructure = 0;
+        const pieceValues = { pawn: 100, knight: 320, bishop: 330, rook: 500, queen: 900, king: 0 };
+        // Pawn structure helpers
+        const whitePawnCols = new Set();
+        const blackPawnCols = new Set();
+        for (let row = 0; row < 8; row++) {
+            for (let col = 0; col < 8; col++) {
+                const piece = board[row][col];
+                if (piece) {
+                    const value = pieceValues[piece.type];
+                    if (piece.color === 'white') {
+                        whiteMaterial += value;
+                        whiteActivity += this.evaluatePieceActivity(piece, row, col, board);
+                        if (piece.type === 'pawn') whitePawnCols.add(col);
+                        if (piece.type !== 'pawn' && piece.type !== 'king' && (row < 7 && row > 4)) whiteDevelopment += 10;
+                    } else {
+                        blackMaterial += value;
+                        blackActivity += this.evaluatePieceActivity(piece, row, col, board);
+                        if (piece.type === 'pawn') blackPawnCols.add(col);
+                        if (piece.type !== 'pawn' && piece.type !== 'king' && (row > 0 && row < 3)) blackDevelopment += 10;
+                    }
+                }
+            }
+        }
+        // Pawn structure: penalize doubled/isolated pawns
+        whitePawnStructure -= (8 - whitePawnCols.size) * 15;
+        blackPawnStructure -= (8 - blackPawnCols.size) * 15;
+        // King safety
+        const whiteKingSafety = this.evaluateKingSafety('white', null, null, board);
+        const blackKingSafety = this.evaluateKingSafety('black', null, null, board);
+        // Combine
+        let score = (blackMaterial - whiteMaterial)
+            + 0.1 * (blackActivity - whiteActivity)
+            + 0.1 * (blackDevelopment - whiteDevelopment)
+            + 0.1 * (blackPawnStructure - whitePawnStructure)
+            + 0.2 * (blackKingSafety - whiteKingSafety);
+        // Add small random noise to avoid deterministic play
+        score += Math.random() * 2 - 1;
+        return score;
     }
 }
 
