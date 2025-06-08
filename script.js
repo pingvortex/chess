@@ -768,6 +768,66 @@ showHint() {
     });
 }
 
+copyGameHistory() {
+    let pgn = '';
+    let movePairs = [];
+    for (let i = 0; i < this.gameHistory.length; i += 2) {
+        const whiteMove = this.gameHistory[i] ? this.gameHistory[i].move : '';
+        const blackMove = this.gameHistory[i + 1] ? this.gameHistory[i + 1].move : '';
+        const turn = this.gameHistory[i] ? this.gameHistory[i].turn : (i / 2) + 1;
+        movePairs.push(`${turn}. ${whiteMove}${blackMove ? ' ' + blackMove : ''}`);
+    }
+    pgn = movePairs.join(' ');
+
+    if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(pgn).then(() => {
+            console.log('PGN copied to clipboard');
+        }).catch(err => {
+            console.error('Failed to copy PGN: ', err);
+        });
+    } else {
+        const textarea = document.createElement('textarea');
+        textarea.value = pgn;
+        document.body.appendChild(textarea);
+        textarea.select();
+        try {
+            document.execCommand('copy');
+            console.log('PGN copied to clipboard');
+        } catch (err) {
+            console.error('Failed to copy PGN: ', err);
+        }
+        document.body.removeChild(textarea);
+    }
+}
+
+setupEventListeners() {
+    document.getElementById('chess-container').addEventListener('click', (e) => {
+        if (!this.gameActive) return;
+        
+        const cell = e.target.closest('.cell');
+        if (!cell) return;
+        
+        const row = parseInt(cell.dataset.row);
+        const col = parseInt(cell.dataset.col);
+        this.handleCellClick(row, col);
+    });
+
+    document.getElementById('hint-button').addEventListener('click', () => {
+        this.showHint();
+    });
+
+    document.getElementById('new-game-button').addEventListener('click', () => {
+        this.newGame();
+    });
+
+    const copyBtn = document.getElementById('copy-history-button');
+    if (copyBtn) {
+        copyBtn.addEventListener('click', () => {
+            this.copyGameHistory();
+        });
+    }
+}
+
 parseMoveNotation(notation) {
     const files = 'abcdefgh';
 
