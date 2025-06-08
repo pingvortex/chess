@@ -779,9 +779,22 @@ copyGameHistory() {
     }
     pgn = movePairs.join(' ');
 
+    const copyBtn = document.getElementById('copy-history-button');
+    const setCopied = () => {
+        if (copyBtn) {
+            const original = copyBtn.textContent;
+            copyBtn.textContent = 'Copied';
+            copyBtn.disabled = true;
+            setTimeout(() => {
+                copyBtn.textContent = original;
+                copyBtn.disabled = false;
+            }, 1000);
+        }
+    };
+
     if (navigator.clipboard && window.isSecureContext) {
         navigator.clipboard.writeText(pgn).then(() => {
-            console.log('PGN copied to clipboard');
+            setCopied();
         }).catch(err => {
             console.error('Failed to copy PGN: ', err);
         });
@@ -792,7 +805,7 @@ copyGameHistory() {
         textarea.select();
         try {
             document.execCommand('copy');
-            console.log('PGN copied to clipboard');
+            setCopied();
         } catch (err) {
             console.error('Failed to copy PGN: ', err);
         }
